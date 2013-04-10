@@ -21,7 +21,7 @@ var THREEx	= THREEx 		|| {};
 	var toDataURL	= function(renderer, mimetype)
 	{
 		mimetype	= mimetype	|| "image/jpeg";
-		var dataUrl	= renderer.domElement.toDataURL(mimetype);
+		var dataUrl	= renderer.domElement.toDataURL(mimetype, 0.60);
 		return dataUrl;
 	}
 
@@ -68,7 +68,7 @@ var THREEx	= THREEx 		|| {};
 
 			// dump the canvas to an URL		
 
-			var newDataUrl	= canvas.toDataURL(mimetype);
+			var newDataUrl	= canvas.toDataURL(mimetype, 0.60);
 			// notify the url to the caller
 			callback && callback(newDataUrl)
 		}.bind(this);
