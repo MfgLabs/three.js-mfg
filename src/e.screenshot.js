@@ -18,10 +18,11 @@ var THREEx	= THREEx 		|| {};
 	 * @param {String} mimetype of the output image. default to "image/png"
 	 * @param {String} dataUrl of the image
 	*/
-	var toDataURL	= function(renderer, mimetype)
+	var toDataURL	= function(renderer, mimetype, quality)
 	{
 		mimetype	= mimetype	|| "image/jpeg";
-		var dataUrl	= renderer.domElement.toDataURL(mimetype, 0.60);
+                quality         = quality       || 0.70;
+		var dataUrl	= renderer.domElement.toDataURL(mimetype, quality);
 		return dataUrl;
 	}
 
@@ -33,8 +34,9 @@ var THREEx	= THREEx 		|| {};
 	 * @param {Number} dstHeight the destination height of the image
 	 * @param {Number} callback the callback to notify once completed with callback(newImageUrl)
 	*/
-	var aspectResize	= function(srcUrl, dstW, dstH, mimetype, callback){
+	var aspectResize	= function(srcUrl, dstW, dstH, mimetype, quality, callback){
 		mimetype	= mimetype || "image/jpeg";
+                quality         = quality || 0.70;
 		// to compute the width/height while keeping aspect
 		var cpuScaleAspect	= function(maxW, maxH, curW, curH){
 			var ratio	= curH / curW;
@@ -61,6 +63,7 @@ var THREEx	= THREEx 		|| {};
 			// scale the image while preserving the aspect
 			var scaled	= cpuScaleAspect(canvas.width, canvas.height, image.width, image.height);
 
+ 
 			// actually draw the image on canvas
 			var offsetX	= (canvas.width  - scaled.width )/2;
 			var offsetY	= (canvas.height - scaled.height)/2;
@@ -68,7 +71,7 @@ var THREEx	= THREEx 		|| {};
 
 			// dump the canvas to an URL		
 
-			var newDataUrl	= canvas.toDataURL(mimetype, 0.60);
+			var newDataUrl	= canvas.toDataURL(mimetype, quality);
 			// notify the url to the caller
 			callback && callback(newDataUrl)
 		}.bind(this);
@@ -92,6 +95,7 @@ var THREEx	= THREEx 		|| {};
 		var charCode	= opts.charCode	|| 'p'.charCodeAt(0);
 		var width	= opts.width;
 		var height	= opts.height;
+                var quality     = opts.quality || 0.70;
 		var callback	= opts.callback	|| function(url){
 			window.open(url, "name-"+Math.random());
 		};
@@ -101,14 +105,13 @@ var THREEx	= THREEx 		|| {};
 			// return now if the KeyPress isnt for the proper charCode
 			if( event.which !== charCode )	return;
 			// get the renderer output
-			var dataUrl	= this.toDataURL(renderer);
 
 			if( width === undefined && height === undefined ){
-				callback( dataUrl )
+				callback( this.toDataURL(dataUrl, quality) )
 			}else{
 				// resize it and notify the callback
 				// * resize == async so if callback is a window open, it triggers the pop blocker
-				this.aspectResize(dataUrl, width, height, callback);				
+				this.aspectResize(this.toDataURL(dataUrl), width, height, quality, callback);				
 			}
 		}.bind(this);
 
