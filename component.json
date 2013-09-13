@@ -1,6 +1,6 @@
 {
   "name": "three.js-mfg",
-  "version": "0.0.53",
+  "version": "0.0.54",
   "main": "./index.js",
   "ignore": [ "*.txt", "LICENCE", "README.md", "src/*.js" ],
   "dependencies": {
