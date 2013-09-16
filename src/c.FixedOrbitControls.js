@@ -417,7 +417,7 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
     document.removeEventListener( 'mousemove', onMouseMove, false );
     document.removeEventListener( 'mouseup', onMouseUp, false );
-    this.domElement.removeEventListener( 'DOMMouseScroll', onMouseWheel );
+    document.removeEventListener( 'DOMMouseScroll', onMouseWheel, false );
     state = STATE.NONE;
 
   }
