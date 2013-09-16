@@ -781,6 +781,7 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
   this.object = object;
   this.domElement = ( domElement !== undefined ) ? domElement : document;
+
   this.CAMERAMODE = { CAMERA2D : 0, CAMERA3D : 1, TIMELINE : 2 };
   this.cameraMode = this.CAMERAMODE.CAMERA3D;
 
@@ -798,10 +799,10 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
   this.autoRotateSpeed = 2.0; // 30 seconds per round when fps is 60
 
   this.minPolarAngle = 0; // radians
-  this.maxPolarAngle = Math.PI; // radians
+  this.maxPolarAngle = Math.PI / 2.0; // radians
 
-  this.minDistance = 0;
-  this.maxDistance = Infinity;
+  this.minDistance = 10;
+  this.maxDistance = 20000;
 
   // internals
 
@@ -817,14 +818,25 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
   var zoomStart = new THREE.Vector2();
   var zoomEnd = new THREE.Vector2();
   var zoomDelta = new THREE.Vector2();
+  
+  var translateStart = new THREE.Vector2();
+  var translateEnd = new THREE.Vector2();
+  var translateDelta = new THREE.Vector2();
+
+  var moveForward = false;
+  var moveBackward = false;
+  var moveLeft = false;
+  var moveRight = false;
 
   var phiDelta = 0;
   var thetaDelta = 0;
   var scale = 1;
+  var distance = -1;
 
   var lastPosition = new THREE.Vector3();
-
-  var STATE = { NONE : -1, ROTATE : 0, ZOOM : 1 };
+  var lastOffset = new THREE.Vector3();
+  var MOUSE = { NONE : -1, LEFT : 0, MIDDLE : 1, RIGHT : 2 };
+  var STATE = { NONE : -1, ROTATE : 0, ZOOM : 1, TRANSLATE : 2 };
   var state = STATE.NONE;
 
   // events
@@ -904,6 +916,30 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
   };
 
+  this.translate = function ( x, y ) {
+
+    var vector = new THREE.Vector2(0.0,0.0);
+      if (x === undefined) {  vector.y = y; }
+      if (y === undefined) {  vector.x = x; }
+
+    /*
+    Je pense qu'il faut que je rajoute une rotation autour du centre sur le vecteur de translation
+    */
+
+    // TODO rotate the vector before applying it to the center and object
+    //vector.x 
+
+    //var axis = new THREE.Vector3( 1, 0, 0 );
+    //var angle = - Math.PI / 2;
+    //var matrix = new THREE.Matrix4().makeRotation( axis, angle );
+    //var matrix.multiplyVector3( vector );
+
+    this.center.x            += vector.x;
+    this.object.position.x   += vector.x;
+    this.center.z            -= vector.y;
+    this.object.position.z   -= vector.y;
+
+  };
   this.update = function () {
 
     var position = this.object.position;
@@ -923,6 +959,11 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
     }
 
+    if ( this.moveLeft )      this.translate( undefined, - 1 );
+    if ( this.moveRight )     this.translate( undefined,  1  );
+    if ( this.moveForward )   this.translate( - 1, undefined );
+    if ( this.moveBackward )  this.translate(   1, undefined );
+
     theta += thetaDelta;
     phi += phiDelta;
 
@@ -935,7 +976,15 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
     var radius = offset.length() * scale;
 
     // restrict radius to be between desired limits
-    radius = Math.max( this.minDistance, Math.min( this.maxDistance, radius ) );
+    if (distance > 0) {
+      radius = this.minDistance + distance * (this.maxDistance - this.minDistance);
+      distance = -1;
+    } else {
+      radius = Math.max( this.minDistance, Math.min( this.maxDistance, radius ) );
+      var factor = 1.0 - (radius - this.minDistance) / (this.maxDistance - this.minDistance);
+      var on100 =  Math.round(factor * 100);
+      $("#zoom").slider('option','value',on100);
+    }
 
     offset.x = radius * Math.sin( phi ) * Math.sin( theta );
     offset.y = radius * Math.cos( phi );
@@ -961,7 +1010,22 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
   this.setCameraMode = function (value) {
     this.cameraMode = value;
-  }
+  };
+
+   /**
+     * Set scale using a factor (between 0 and 1)
+     * 0.0 -> min distance
+     * 1.0 -> max distance
+     */
+  this.setScaleFactor = function (factor) {
+    var newScale = this.minDistance + factor * (this.maxDistance - this.minDistance);
+    console.log("newScale: "+newScale);
+    scale = newScale;
+  };
+
+  this.setDistance = function ( s ) {
+    distance = s;
+  };
 
   function getAutoRotationAngle() {
 
@@ -981,17 +1045,26 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
     event.preventDefault();
 
-    if ( event.button === 0 || event.button === 2 ) {
+        if ( event.button === MOUSE.LEFT ) {
+          if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D
+           || scope.cameraMode == scope.CAMERAMODE.TIMELINE) {
+              state = STATE.TRANSLATE;
+        translateStart.set( event.clientX, event.clientY );
+      } 
 
-      state = STATE.ROTATE;
+      else if (scope.cameraMode == scope.CAMERAMODE.CAMERA3D) {
+        state = STATE.ROTATE;
+        rotateStart.set( event.clientX, event.clientY );      
+      }
 
-      rotateStart.set( event.clientX, event.clientY );
-
-    } else if ( event.button === 1 ) {
+        }  else if ( event.button === MOUSE.MIDDLE) {
 
       state = STATE.ZOOM;
 
       zoomStart.set( event.clientX, event.clientY );
+
+    } else if ( event.button === MOUSE.RIGHT ) {
+
 
     }
 
@@ -1004,15 +1077,33 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
     event.preventDefault();
 
-    if ( state === STATE.ROTATE ) {
+      if ( state === STATE.TRANSLATE ) {
 
-      rotateEnd.set( event.clientX, event.clientY );
-      rotateDelta.sub( rotateEnd, rotateStart );
 
-      scope.rotateLeft( 2 * Math.PI * rotateDelta.x / PIXELS_PER_ROUND * scope.userRotateSpeed );
-      scope.rotateUp( 2 * Math.PI * rotateDelta.y / PIXELS_PER_ROUND * scope.userRotateSpeed );
+         translateEnd.set( event.clientX, event.clientY );
 
-      rotateStart.copy( rotateEnd );
+
+        translateDelta.sub( translateEnd, translateStart );
+
+          scope.translate( -translateDelta.x, undefined );
+          if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D) {
+          scope.translate( undefined, translateDelta.y );
+          }
+
+        translateStart.copy( translateEnd );
+
+
+    } else if ( state === STATE.ROTATE ) {
+
+
+        rotateEnd.set( event.clientX, event.clientY );
+        rotateDelta.sub( rotateEnd, rotateStart );
+
+        scope.rotateLeft( 2 * Math.PI * rotateDelta.x / PIXELS_PER_ROUND * scope.userRotateSpeed );
+        scope.rotateUp( 2 * Math.PI * rotateDelta.y / PIXELS_PER_ROUND * scope.userRotateSpeed );
+
+        rotateStart.copy( rotateEnd );
+
 
     } else if ( state === STATE.ZOOM ) {
 
@@ -1035,13 +1126,68 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
   }
 
+  this.onDragStart = function (event ) {
+
+        if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D
+             || scope.cameraMode == scope.CAMERAMODE.TIMELINE) {
+                state = STATE.TRANSLATE;
+          translateStart.set( event.clientX, event.clientY );
+      } 
+
+        else if (scope.cameraMode == scope.CAMERAMODE.CAMERA3D) {
+          state = STATE.ROTATE;
+          rotateStart.set( event.clientX, event.clientY );      
+      }
+
+  };
+
+  this.onDragEnd = function ( event ) {
+
+    state == STATE.NONE;
+
+  };
+
+  this.onDragMove = function(  event ) {
+
+      if ( state === STATE.TRANSLATE ) {
+
+
+         translateEnd.set( event.clientX, event.clientY );
+
+
+        translateDelta.sub( translateEnd, translateStart );
+
+          scope.translate( -translateDelta.x, undefined );
+          if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D) {
+          scope.translate( undefined, translateDelta.y );
+          }
+
+        translateStart.copy( translateEnd );
+
+
+    } else if ( state === STATE.ROTATE ) {
+
+
+        rotateEnd.set( event.clientX, event.clientY );
+        rotateDelta.sub( rotateEnd, rotateStart );
+
+        scope.rotateLeft( 2 * Math.PI * rotateDelta.x / PIXELS_PER_ROUND * scope.userRotateSpeed );
+        scope.rotateUp( 2 * Math.PI * rotateDelta.y / PIXELS_PER_ROUND * scope.userRotateSpeed );
+
+        rotateStart.copy( rotateEnd );
+
+
+    } 
+
+  };
+
   function onMouseUp( event ) {
 
-    if ( ! scope.userRotate ) return;
+    // if ( ! scope.userRotate ) return;
 
     document.removeEventListener( 'mousemove', onMouseMove, false );
     document.removeEventListener( 'mouseup', onMouseUp, false );
-
+    this.domElement.removeEventListener( 'DOMMouseScroll', onMouseWheel );
     state = STATE.NONE;
 
   }
@@ -1050,14 +1196,17 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
 
     if ( ! scope.userZoom ) return;
 
-    if ( event.wheelDelta > 0 ) {
-
-      scope.zoomOut();
-
+    var zoom = false;
+    if ("wheelDelta" in event) {
+      zoom = event.wheelDelta < 0;
     } else {
+        zoom = event.detail > 0;
+    }
 
-      scope.zoomIn();
-
+    if (zoom) {
+        scope.zoomIn();
+    } else {
+        scope.zoomOut();
     }
 
   }
@@ -1065,6 +1214,7 @@ THREE.FixedOrbitControls = function ( object, domElement ) {
   this.domElement.addEventListener( 'contextmenu', function ( event ) { event.preventDefault(); }, false );
   this.domElement.addEventListener( 'mousedown', onMouseDown, false );
   this.domElement.addEventListener( 'mousewheel', onMouseWheel, false );
+  this.domElement.addEventListener('DOMMouseScroll', onMouseWheel, false);
 
 };
 /** @namespace */
