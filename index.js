@@ -710,7 +710,6 @@ s.matrixWorld),b.renderImmediateObject(k,i.__lights,null,c,s));n=b.getClearColor
 fragmentShader:"precision mediump float;\nuniform sampler2D map;\nuniform float opacity;\nuniform int renderType;\nuniform vec3 color;\nvarying vec2 vUV;\nvarying float vVisibility;\nvoid main() {\nif( renderType == 0 ) {\ngl_FragColor = vec4( 1.0, 0.0, 1.0, 0.0 );\n} else if( renderType == 1 ) {\ngl_FragColor = texture2D( map, vUV );\n} else {\nvec4 texture = texture2D( map, vUV );\ntexture.a *= opacity * vVisibility;\ngl_FragColor = texture;\ngl_FragColor.rgb *= color;\n}\n}"},lensFlare:{vertexShader:"uniform vec3 screenPosition;\nuniform vec2 scale;\nuniform float rotation;\nuniform int renderType;\nattribute vec2 position;\nattribute vec2 uv;\nvarying vec2 vUV;\nvoid main() {\nvUV = uv;\nvec2 pos = position;\nif( renderType == 2 ) {\npos.x = cos( rotation ) * position.x - sin( rotation ) * position.y;\npos.y = sin( rotation ) * position.x + cos( rotation ) * position.y;\n}\ngl_Position = vec4( ( pos * scale + screenPosition.xy ).xy, screenPosition.z, 1.0 );\n}",
 fragmentShader:"precision mediump float;\nuniform sampler2D map;\nuniform sampler2D occlusionMap;\nuniform float opacity;\nuniform int renderType;\nuniform vec3 color;\nvarying vec2 vUV;\nvoid main() {\nif( renderType == 0 ) {\ngl_FragColor = vec4( texture2D( map, vUV ).rgb, 0.0 );\n} else if( renderType == 1 ) {\ngl_FragColor = texture2D( map, vUV );\n} else {\nfloat visibility = texture2D( occlusionMap, vec2( 0.5, 0.1 ) ).a +\ntexture2D( occlusionMap, vec2( 0.9, 0.5 ) ).a +\ntexture2D( occlusionMap, vec2( 0.5, 0.9 ) ).a +\ntexture2D( occlusionMap, vec2( 0.1, 0.5 ) ).a;\nvisibility = ( 1.0 - visibility / 4.0 );\nvec4 texture = texture2D( map, vUV );\ntexture.a *= opacity * visibility;\ngl_FragColor = texture;\ngl_FragColor.rgb *= color;\n}\n}"}};THREE.ShaderSprite={sprite:{vertexShader:"uniform int useScreenCoordinates;\nuniform int sizeAttenuation;\nuniform vec3 screenPosition;\nuniform mat4 modelViewMatrix;\nuniform mat4 projectionMatrix;\nuniform float rotation;\nuniform vec2 scale;\nuniform vec2 alignment;\nuniform vec2 uvOffset;\nuniform vec2 uvScale;\nattribute vec2 position;\nattribute vec2 uv;\nvarying vec2 vUV;\nvoid main() {\nvUV = uvOffset + uv * uvScale;\nvec2 alignedPosition = position + alignment;\nvec2 rotatedPosition;\nrotatedPosition.x = ( cos( rotation ) * alignedPosition.x - sin( rotation ) * alignedPosition.y ) * scale.x;\nrotatedPosition.y = ( sin( rotation ) * alignedPosition.x + cos( rotation ) * alignedPosition.y ) * scale.y;\nvec4 finalPosition;\nif( useScreenCoordinates != 0 ) {\nfinalPosition = vec4( screenPosition.xy + rotatedPosition, screenPosition.z, 1.0 );\n} else {\nfinalPosition = projectionMatrix * modelViewMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );\nfinalPosition.xy += rotatedPosition * ( sizeAttenuation == 1 ? 1.0 : finalPosition.z );\n}\ngl_Position = finalPosition;\n}",
 fragmentShader:"precision mediump float;\nuniform vec3 color;\nuniform sampler2D map;\nuniform float opacity;\nuniform int fogType;\nuniform vec3 fogColor;\nuniform float fogDensity;\nuniform float fogNear;\nuniform float fogFar;\nuniform float alphaTest;\nvarying vec2 vUV;\nvoid main() {\nvec4 texture = texture2D( map, vUV );\nif ( texture.a < alphaTest ) discard;\ngl_FragColor = vec4( color * texture.xyz, texture.a * opacity );\nif ( fogType > 0 ) {\nfloat depth = gl_FragCoord.z / gl_FragCoord.w;\nfloat fogFactor = 0.0;\nif ( fogType == 1 ) {\nfogFactor = smoothstep( fogNear, fogFar, depth );\n} else {\nconst float LOG2 = 1.442695;\nfloat fogFactor = exp2( - fogDensity * fogDensity * depth * depth * LOG2 );\nfogFactor = 1.0 - clamp( fogFactor, 0.0, 1.0 );\n}\ngl_FragColor = mix( gl_FragColor, vec4( fogColor, gl_FragColor.w ), fogFactor );\n}\n}"}};
-
 /**
  * @author alteredq / http://alteredqualia.com/
  * @author mr.doob / http://mrdoob.com/
@@ -769,8 +768,6 @@ Detector = {
 	}
 
 };
-
-
 /**
  * @author qiao / https://github.com/qiao
  * @author mrdoob / http://mrdoob.com
@@ -780,561 +777,296 @@ Detector = {
 
 THREE.FixedOrbitControls = function ( object, domElement ) {
 
-	THREE.EventTarget.call( this );
+  THREE.EventDispatcher.call( this );
 
-	this.object = object;
-	this.domElement = ( domElement !== undefined ) ? domElement : document;
+  this.object = object;
+  this.domElement = ( domElement !== undefined ) ? domElement : document;
+  this.CAMERAMODE = { CAMERA2D : 0, CAMERA3D : 1, TIMELINE : 2 };
+  this.cameraMode = this.CAMERAMODE.CAMERA3D;
 
-	// API
+  // API
 
-	this.center = new THREE.Vector3();
-    this.CAMERAMODE = { CAMERA2D : 0, CAMERA3D : 1, TIMELINE : 2 };
-    this.cameraMode = this.CAMERAMODE.CAMERA3D;
+  this.center = new THREE.Vector3();
 
-	this.userZoom = true;
-	this.userZoomSpeed = 1.0;
+  this.userZoom = true;
+  this.userZoomSpeed = 1.0;
 
-	this.userRotate = true;
-	this.userRotateSpeed = 1.0;
+  this.userRotate = true;
+  this.userRotateSpeed = 1.0;
 
-	this.autoRotate = false;
-	this.autoRotateSpeed = 2.0; // 30 seconds per round when fps is 60
+  this.autoRotate = false;
+  this.autoRotateSpeed = 2.0; // 30 seconds per round when fps is 60
 
-	this.minPolarAngle = 0; // radians
-	this.maxPolarAngle = Math.PI / 2; // radians
+  this.minPolarAngle = 0; // radians
+  this.maxPolarAngle = Math.PI; // radians
 
-	this.minDistance = 10;
-	this.maxDistance = 20000;
+  this.minDistance = 0;
+  this.maxDistance = Infinity;
 
-	// internals
+  // internals
 
-	var scope = this;
+  var scope = this;
 
+  var EPS = 0.000001;
+  var PIXELS_PER_ROUND = 1800;
 
-	var EPS = 0.000001;
-	var PIXELS_PER_ROUND = 1800;
+  var rotateStart = new THREE.Vector2();
+  var rotateEnd = new THREE.Vector2();
+  var rotateDelta = new THREE.Vector2();
 
-	var rotateStart = new THREE.Vector2();
-	var rotateEnd = new THREE.Vector2();
-	var rotateDelta = new THREE.Vector2();
+  var zoomStart = new THREE.Vector2();
+  var zoomEnd = new THREE.Vector2();
+  var zoomDelta = new THREE.Vector2();
 
-	var zoomStart = new THREE.Vector2();
-	var zoomEnd = new THREE.Vector2();
-	var zoomDelta = new THREE.Vector2();
+  var phiDelta = 0;
+  var thetaDelta = 0;
+  var scale = 1;
 
-	var translateStart = new THREE.Vector2();
-	var translateEnd = new THREE.Vector2();
-	var translateDelta = new THREE.Vector2();
+  var lastPosition = new THREE.Vector3();
 
-	var moveForward = false;
-	var moveBackward = false;
-	var moveLeft = false;
-	var moveRight = false;
+  var STATE = { NONE : -1, ROTATE : 0, ZOOM : 1 };
+  var state = STATE.NONE;
 
-	var phiDelta = 0;
-	var thetaDelta = 0;
-	var scale = 1;
+  // events
 
-	var distance = -1;
+  var changeEvent = { type: 'change' };
 
-	var lastPosition = new THREE.Vector3();
-	var lastOffset = new THREE.Vector3();
-	var MOUSE = { NONE : -1, LEFT : 0, MIDDLE : 1, RIGHT : 2 };
-	var STATE = { NONE : -1, ROTATE : 0, ZOOM : 1, TRANSLATE : 2 };
-	var state = STATE.NONE;
 
-	// events
+  this.rotateLeft = function ( angle ) {
 
-	var changeEvent = { type: 'change' };
+    if ( angle === undefined ) {
 
+      angle = getAutoRotationAngle();
 
-	this.rotateLeft = function ( angle ) {
-
-		if ( angle === undefined ) {
-
-			angle = getAutoRotationAngle();
-
-		}
-
-		thetaDelta -= angle;
-
-	};
-
-	this.rotateRight = function ( angle ) {
-
-		if ( angle === undefined ) {
-
-			angle = getAutoRotationAngle();
-
-		}
-
-		thetaDelta += angle;
-
-	};
-
-	this.rotateUp = function ( angle ) {
-
-		if ( angle === undefined ) {
-
-			angle = getAutoRotationAngle();
-
-		}
-
-		phiDelta -= angle;
-
-	};
-
-
-	this.rotateDown = function ( angle ) {
-
-		if ( angle === undefined ) {
-
-			angle = getAutoRotationAngle();
-
-		}
-
-		phiDelta += angle;
-
-	};
-
-	this.setCameraMode = function (value) {
-		this.cameraMode = value;
-	}
-
-
-	// simplified: we suppose we always rotate positively
-	this.setThetaDelta = function ( t ) {
-
-	    thetaDelta = t;
-
-	};
-
-	this.setPhiDelta = function ( p ) {
-
-		phiDelta = p;
-
-	};
-
-
-	this.setDistance= function ( s ) {
-		distance = s;
-	};
-
-
-
-	this.zoomIn = function ( zoomScale ) {
-
-		if ( zoomScale === undefined ) {
-
-			zoomScale = getZoomScale();
-
-		}
-
-		scale /= zoomScale;
-
-	};
-
-	this.zoomOut = function ( zoomScale ) {
-
-		if ( zoomScale === undefined ) {
-
-			zoomScale = getZoomScale();
-
-		}
-
-		scale *= zoomScale;
-
-	};
-
-	this.translate = function ( x, y ) {
-		
-		var vector = new THREE.Vector2(0.0,0.0);
-	    if (x === undefined) {  vector.y = y; }
-	    if (y === undefined) {  vector.x = x; }
-
-		/*
-		Je pense qu'il faut que je rajoute une rotation autour du centre sur le vecteur de translation
-		*/
-
-		// TODO rotate the vector before applying it to the center and object
-		//vector.x 
-
-        //var axis = new THREE.Vector3( 1, 0, 0 );
-        //var angle = - Math.PI / 2;
-        //var matrix = new THREE.Matrix4().makeRotation( axis, angle );
-        //var matrix.multiplyVector3( vector );
-
-		this.center.x            += vector.x;
-		this.object.position.x   += vector.x;
-		this.center.z            -= vector.y;
-		this.object.position.z   -= vector.y;
-
-	};
-
-
-    this.getPhi = function () {
-
-		var position = this.object.position;
-		var offset = position.clone().subSelf( this.center );
-		// angle from y-axis
-        return Math.atan2( Math.sqrt( offset.x * offset.x + offset.z * offset.z ), offset.y );
-    };
-
-    this.getTheta = function () {
-
-      	var position = this.object.position;
-		var offset = position.clone().subSelf( this.center );
-
-		// angle from z-axis around y-axis
-		return Math.atan2( offset.x, offset.z );
-    };
-
-    this.getScale = function () {
-    	return scale;
     }
 
-    /**
-     * Set scale using a factor (between 0 and 1)
-     * 0.0 -> min distance
-     * 1.0 -> max distance
-     */
-    this.setScaleFactor = function (factor) {
-         var newScale = this.minDistance + factor * (this.maxDistance - this.minDistance);
- 		 console.log("newScale: "+newScale);
- 		 scale = newScale;
+    thetaDelta -= angle;
+
+  };
+
+  this.rotateRight = function ( angle ) {
+
+    if ( angle === undefined ) {
+
+      angle = getAutoRotationAngle();
+
     }
 
-	this.update = function () {
+    thetaDelta += angle;
 
-		var position = this.object.position;
-		var offset = position.clone().subSelf( this.center );
+  };
 
-        if (false) {
-          var axis = new THREE.Vector3( 1, 0, 0 );
-          var angle = + Math.PI / 2;
-          var matrix = new THREE.Matrix4().makeRotationAxis( axis, angle );
-          matrix.multiplyVector3( offset );
-        }
-  
+  this.rotateUp = function ( angle ) {
 
-		// angle from z-axis around y-axis
+    if ( angle === undefined ) {
 
-		var theta = Math.atan2( offset.x, offset.z );
+      angle = getAutoRotationAngle();
 
-		// angle from y-axis
+    }
 
-		var phi = Math.atan2( Math.sqrt( offset.x * offset.x + offset.z * offset.z ), offset.y );
+    phiDelta -= angle;
 
-		if ( this.autoRotate ) {
+  };
 
-			this.rotateLeft( getAutoRotationAngle() );
+  this.rotateDown = function ( angle ) {
 
-		}
+    if ( angle === undefined ) {
 
+      angle = getAutoRotationAngle();
 
-		if ( this.moveLeft )      this.translate( undefined, - 1  );
-		if ( this.moveRight )     this.translate( undefined,  1  );
-		if ( this.moveForward )   this.translate( - 1, undefined );
-		if ( this.moveBackward )  this.translate(   1, undefined );
+    }
 
-	
-		theta += thetaDelta;
-		phi += phiDelta;
-	   
+    phiDelta += angle;
 
-		// restrict phi to be between desired limits
-		phi = Math.max( this.minPolarAngle, Math.min( this.maxPolarAngle, phi ) );
+  };
 
-		// restrict phi to be betwee EPS and PI-EPS
-		phi = Math.max( EPS, Math.min( Math.PI - EPS, phi ) );
+  this.zoomIn = function ( zoomScale ) {
 
-		var radius = offset.length() * scale;
+    if ( zoomScale === undefined ) {
 
-		// restrict radius to be between desired limits
-		if (distance > 0) {
-			radius = this.minDistance + distance * (this.maxDistance - this.minDistance);
-			distance = -1;
-		} else {
-			// UGLY HACK, SHOULD BE DONE IN A MORE CLEAR WAY
-			radius = Math.max( this.minDistance, Math.min( this.maxDistance, radius ) );
-			var factor = 1.0 - (radius - this.minDistance) / (this.maxDistance - this.minDistance);
+      zoomScale = getZoomScale();
 
-			var on100 =  Math.round(factor * 100);
-			//console.log("factor: "+factor+ " value / 100: "+on100);
-			$("#zoom").slider('option','value',on100);
-		}
+    }
 
+    scale /= zoomScale;
 
+  };
 
-		offset.x = radius * Math.sin( phi ) * Math.sin( theta );
-		offset.y = radius * Math.cos( phi );
-		offset.z = radius * Math.sin( phi ) * Math.cos( theta );
+  this.zoomOut = function ( zoomScale ) {
 
-		//lastOffset = offset.copy();
+    if ( zoomScale === undefined ) {
 
-		position.copy( this.center ).addSelf( offset );
+      zoomScale = getZoomScale();
 
-		this.object.lookAt( this.center );
+    }
 
-		thetaDelta = 0;
-		phiDelta = 0;
-		scale = 1;
+    scale *= zoomScale;
 
-		if ( lastPosition.distanceTo( this.object.position ) > 0 ) {
+  };
 
-			this.dispatchEvent( changeEvent );
+  this.update = function () {
 
-			lastPosition.copy( this.object.position );
+    var position = this.object.position;
+    var offset = position.clone().subSelf( this.center )
 
-		}
+    // angle from z-axis around y-axis
 
-	};
+    var theta = Math.atan2( offset.x, offset.z );
 
+    // angle from y-axis
 
-	function getAutoRotationAngle() {
+    var phi = Math.atan2( Math.sqrt( offset.x * offset.x + offset.z * offset.z ), offset.y );
 
-		return 2 * Math.PI / 60 / 60 * scope.autoRotateSpeed;
+    if ( this.autoRotate ) {
 
-	}
+      this.rotateLeft( getAutoRotationAngle() );
 
-	function getZoomScale() {
+    }
 
-		return Math.pow( 0.95, scope.userZoomSpeed );
+    theta += thetaDelta;
+    phi += phiDelta;
 
-	}
+    // restrict phi to be between desired limits
+    phi = Math.max( this.minPolarAngle, Math.min( this.maxPolarAngle, phi ) );
 
-	function onMouseDown( event ) {
+    // restrict phi to be betwee EPS and PI-EPS
+    phi = Math.max( EPS, Math.min( Math.PI - EPS, phi ) );
 
-		if ( !scope.userRotate ) return;
+    var radius = offset.length() * scale;
 
-		event.preventDefault();
+    // restrict radius to be between desired limits
+    radius = Math.max( this.minDistance, Math.min( this.maxDistance, radius ) );
 
-        if ( event.button === MOUSE.LEFT ) {
-        	if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D
-        	 || scope.cameraMode == scope.CAMERAMODE.TIMELINE) {
-	          	state = STATE.TRANSLATE;
-				translateStart.set( event.clientX, event.clientY );
-			} 
+    offset.x = radius * Math.sin( phi ) * Math.sin( theta );
+    offset.y = radius * Math.cos( phi );
+    offset.z = radius * Math.sin( phi ) * Math.cos( theta );
 
-			else if (scope.cameraMode == scope.CAMERAMODE.CAMERA3D) {
-				state = STATE.ROTATE;
-				rotateStart.set( event.clientX, event.clientY );			
-			}
+    position.copy( this.center ).addSelf( offset );
 
-        }  else if ( event.button === MOUSE.MIDDLE) {
+    this.object.lookAt( this.center );
 
-			state = STATE.ZOOM;
+    thetaDelta = 0;
+    phiDelta = 0;
+    scale = 1;
 
-			zoomStart.set( event.clientX, event.clientY );
+    if ( lastPosition.distanceTo( this.object.position ) > 0 ) {
 
-		} else if ( event.button === MOUSE.RIGHT ) {
+      this.dispatchEvent( changeEvent );
 
+      lastPosition.copy( this.object.position );
 
-		}
+    }
 
-		document.addEventListener( 'mousemove', onMouseMove, false );
-		document.addEventListener( 'mouseup', onMouseUp, false );
+  };
 
-	}
+  this.setCameraMode = function (value) {
+    this.cameraMode = value;
+  }
 
-	function onMouseMove( event ) {
+  function getAutoRotationAngle() {
 
-		event.preventDefault();
+    return 2 * Math.PI / 60 / 60 * scope.autoRotateSpeed;
 
-	    if ( state === STATE.TRANSLATE ) {
+  }
 
-	    
-	    	 translateEnd.set( event.clientX, event.clientY );
-			
+  function getZoomScale() {
 
-				translateDelta.sub( translateEnd, translateStart );
+    return Math.pow( 0.95, scope.userZoomSpeed );
 
-			    scope.translate( -translateDelta.x, undefined );
-			    if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D) {
-				  scope.translate( undefined, translateDelta.y );
-			    }
+  }
 
-				translateStart.copy( translateEnd );
+  function onMouseDown( event ) {
 
+    if ( !scope.userRotate ) return;
 
-		} else if ( state === STATE.ROTATE ) {
+    event.preventDefault();
 
-	
-				rotateEnd.set( event.clientX, event.clientY );
-				rotateDelta.sub( rotateEnd, rotateStart );
+    if ( event.button === 0 || event.button === 2 ) {
 
-				scope.rotateLeft( 2 * Math.PI * rotateDelta.x / PIXELS_PER_ROUND * scope.userRotateSpeed );
-				scope.rotateUp( 2 * Math.PI * rotateDelta.y / PIXELS_PER_ROUND * scope.userRotateSpeed );
+      state = STATE.ROTATE;
 
-				rotateStart.copy( rotateEnd );
-			
+      rotateStart.set( event.clientX, event.clientY );
 
-		} else if ( state === STATE.ZOOM ) {
+    } else if ( event.button === 1 ) {
 
-			zoomEnd.set( event.clientX, event.clientY );
-			zoomDelta.sub( zoomEnd, zoomStart );
+      state = STATE.ZOOM;
 
-			if ( zoomDelta.y > 0 ) {
+      zoomStart.set( event.clientX, event.clientY );
 
-				scope.zoomIn();
+    }
 
-			} else {
+    document.addEventListener( 'mousemove', onMouseMove, false );
+    document.addEventListener( 'mouseup', onMouseUp, false );
 
-				scope.zoomOut();
+  }
 
-			}
+  function onMouseMove( event ) {
 
-			zoomStart.copy( zoomEnd );
+    event.preventDefault();
 
-		}
+    if ( state === STATE.ROTATE ) {
 
-	}
+      rotateEnd.set( event.clientX, event.clientY );
+      rotateDelta.sub( rotateEnd, rotateStart );
 
-	this.onDragStart = function (event ) {
+      scope.rotateLeft( 2 * Math.PI * rotateDelta.x / PIXELS_PER_ROUND * scope.userRotateSpeed );
+      scope.rotateUp( 2 * Math.PI * rotateDelta.y / PIXELS_PER_ROUND * scope.userRotateSpeed );
 
-	    	if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D
-	        	 || scope.cameraMode == scope.CAMERAMODE.TIMELINE) {
-		          	state = STATE.TRANSLATE;
-					translateStart.set( event.clientX, event.clientY );
-			} 
+      rotateStart.copy( rotateEnd );
 
-				else if (scope.cameraMode == scope.CAMERAMODE.CAMERA3D) {
-					state = STATE.ROTATE;
-					rotateStart.set( event.clientX, event.clientY );			
-			}
+    } else if ( state === STATE.ZOOM ) {
 
-	};
+      zoomEnd.set( event.clientX, event.clientY );
+      zoomDelta.sub( zoomEnd, zoomStart );
 
-	this.onDragEnd = function ( event ) {
+      if ( zoomDelta.y > 0 ) {
 
-		state == STATE.NONE;
+        scope.zoomIn();
 
-	};
+      } else {
 
-	this.onDragMove = function(  event ) {
+        scope.zoomOut();
 
-	    if ( state === STATE.TRANSLATE ) {
+      }
 
-	    
-	    	 translateEnd.set( event.clientX, event.clientY );
-			
+      zoomStart.copy( zoomEnd );
 
-				translateDelta.sub( translateEnd, translateStart );
+    }
 
-			    scope.translate( -translateDelta.x, undefined );
-			    if (scope.cameraMode == scope.CAMERAMODE.CAMERA2D) {
-				  scope.translate( undefined, translateDelta.y );
-			    }
+  }
 
-				translateStart.copy( translateEnd );
+  function onMouseUp( event ) {
 
+    if ( ! scope.userRotate ) return;
 
-		} else if ( state === STATE.ROTATE ) {
+    document.removeEventListener( 'mousemove', onMouseMove, false );
+    document.removeEventListener( 'mouseup', onMouseUp, false );
 
-	
-				rotateEnd.set( event.clientX, event.clientY );
-				rotateDelta.sub( rotateEnd, rotateStart );
+    state = STATE.NONE;
 
-				scope.rotateLeft( 2 * Math.PI * rotateDelta.x / PIXELS_PER_ROUND * scope.userRotateSpeed );
-				scope.rotateUp( 2 * Math.PI * rotateDelta.y / PIXELS_PER_ROUND * scope.userRotateSpeed );
+  }
 
-				rotateStart.copy( rotateEnd );
-			
+  function onMouseWheel( event ) {
 
-		} 
+    if ( ! scope.userZoom ) return;
 
-	};
+    if ( event.wheelDelta > 0 ) {
 
-	function onMouseUp( event ) {
+      scope.zoomOut();
 
-		//if ( ! scope.userRotate ) return;
+    } else {
 
-		document.removeEventListener( 'mousemove', onMouseMove, false );
-		document.removeEventListener( 'mouseup', onMouseUp, false );
+      scope.zoomIn();
 
-		state = STATE.NONE;
+    }
 
-	}
+  }
 
-	function onMouseWheel( event ) {
+  this.domElement.addEventListener( 'contextmenu', function ( event ) { event.preventDefault(); }, false );
+  this.domElement.addEventListener( 'mousedown', onMouseDown, false );
+  this.domElement.addEventListener( 'mousewheel', onMouseWheel, false );
 
-		if ( ! scope.userZoom ) return;
-
-        var zoom = false;
-		if ("wheelDelta" in event) {
-		  zoom = event.wheelDelta < 0;
-	    } else {
-	   	  zoom = event.detail > 0;
-	    }
-
-	    if (zoom) {
-	    	scope.zoomIn();
-	    } else {
-	    	scope.zoomOut();
-	    }
-
-	}
-
-	this.onKeyDown = function ( event ) {
-
-		switch( event.keyCode ) {
-
-			case 38: /*up*/
-			case 87: /*W*/ this.moveForward = true; break;
-
-			case 37: /*left*/
-			case 65: /*A*/ this.moveLeft = true; break;
-
-			case 40: /*down*/
-			case 83: /*S*/ this.moveBackward = true; break;
-
-			case 39: /*right*/
-			case 68: /*D*/ this.moveRight = true; break;
-
-			case 82: /*R*/ this.moveUp = true; break;
-			case 70: /*F*/ this.moveDown = true; break;
-
-		}
-
-	};
-
-	this.onKeyUp = function ( event ) {
-
-		switch( event.keyCode ) {
-
-			case 38: /*up*/
-			case 87: /*W*/ this.moveForward = false; break;
-
-			case 37: /*left*/
-			case 65: /*A*/ this.moveLeft = false; break;
-
-			case 40: /*down*/
-			case 83: /*S*/ this.moveBackward = false; break;
-
-			case 39: /*right*/
-			case 68: /*D*/ this.moveRight = false; break;
-
-			case 82: /*R*/ this.moveUp = false; break;
-			case 70: /*F*/ this.moveDown = false; break;
-
-		}
-
-	};
-
-	this.remove = function () {
-	    this.domElement.removeEventListener( 'mousedown',  onMouseDown );
-	    this.domElement.removeEventListener( 'mousewheel', onMouseWheel );
-	    this.domElement.removeEventListener( 'DOMMouseScroll', onMouseWheel );
-	};
-
-	this.domElement.addEventListener( 'contextmenu', function ( event ) { event.preventDefault(); }, false );
-	this.domElement.addEventListener( 'mousedown',  onMouseDown,   false );
-	this.domElement.addEventListener( 'mousewheel', onMouseWheel,  false );
-	this.domElement.addEventListener('DOMMouseScroll', onMouseWheel, false);
-	//this.domElement.addEventListener( 'keydown',    onKeyDown,     false );
-	//this.domElement.addEventListener( 'keyup',      onKeyUp,       false );
 };
-
 /** @namespace */
 var THREEx	= THREEx 		|| {};
 
@@ -1472,121 +1204,3 @@ var THREEx	= THREEx 		|| {};
 		aspectResize  : aspectResize
 	};
 })();
-
-
-// This THREEx helper makes it easy to handle the fullscreen API
-// * it hides the prefix for each browser
-// * it hides the little discrepencies of the various vendor API
-// * at the time of this writing (nov 2011) it is available in 
-//   [firefox nightly](http://blog.pearce.org.nz/2011/11/firefoxs-html-full-screen-api-enabled.html),
-//   [webkit nightly](http://peter.sh/2011/01/javascript-full-screen-api-navigation-timing-and-repeating-css-gradients/) and
-//   [chrome stable](http://updates.html5rocks.com/2011/10/Let-Your-Content-Do-the-Talking-Fullscreen-API).
-
-// 
-// # Code
-
-//
-
-/** @namespace */
-var THREEx		= THREEx 		|| {};
-THREEx.FullScreen	= THREEx.FullScreen	|| {};
-
-/**
- * test if it is possible to have fullscreen
- * 
- * @returns {Boolean} true if fullscreen API is available, false otherwise
-*/
-THREEx.FullScreen.available	= function()
-{
-	return this._hasWebkitFullScreen || this._hasMozFullScreen;
-}
-
-/**
- * test if fullscreen is currently activated
- * 
- * @returns {Boolean} true if fullscreen is currently activated, false otherwise
-*/
-THREEx.FullScreen.activated	= function()
-{
-	if( this._hasWebkitFullScreen ){
-		return document.webkitIsFullScreen;
-	}else if( this._hasMozFullScreen ){
-		return document.mozFullScreen;
-	}else{
-		console.assert(false);
-	}
-}
-
-/**
- * Request fullscreen on a given element
- * @param {DomElement} element to make fullscreen. optional. default to document.body
-*/
-THREEx.FullScreen.request	= function(element)
-{
-	element	= element	|| document.body;
-	if( this._hasWebkitFullScreen ){
-		element.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT);
-	}else if( this._hasMozFullScreen ){
-		element.mozRequestFullScreen();
-	}else{
-		console.assert(false);
-	}
-}
-
-/**
- * Cancel fullscreen
-*/
-THREEx.FullScreen.cancel	= function()
-{
-	if( this._hasWebkitFullScreen ){
-		document.webkitCancelFullScreen();
-	}else if( this._hasMozFullScreen ){
-		document.mozCancelFullScreen();
-	}else{
-		console.assert(false);
-	}
-}
-
-
-// internal functions to know which fullscreen API implementation is available
-THREEx.FullScreen._hasWebkitFullScreen	= 'webkitCancelFullScreen' in document	? true : false;	
-THREEx.FullScreen._hasMozFullScreen	= 'mozCancelFullScreen' in document	? true : false;	
-
-/**
- * Bind a key to renderer screenshot
-*/
-THREEx.FullScreen.bindKey	= function(opts){
-	opts		= opts		|| {};
-	var charCode	= opts.charCode	|| 'f'.charCodeAt(0);
-	var dblclick	= opts.dblclick !== undefined ? opts.dblclick : false;
-	var element	= opts.element
-
-	var toggle	= function(){
-		if( THREEx.FullScreen.activated() ){
-			THREEx.FullScreen.cancel();
-		}else{
-			THREEx.FullScreen.request(element);
-		}		
-	}
-
-	// callback to handle keypress
-	var onKeyPress	= function(event){
-		// return now if the KeyPress isnt for the proper charCode
-		if( event.which !== charCode )	return;
-		// toggle fullscreen
-		toggle();
-	}.bind(this);
-
-	// listen to keypress
-	// NOTE: for firefox it seems mandatory to listen to document directly
-	document.addEventListener('keypress', onKeyPress, false);
-	// listen to dblclick
-	dblclick && document.addEventListener('dblclick', toggle, false);
-
-	return {
-		unbind	: function(){
-			document.removeEventListener('keypress', onKeyPress, false);
-			dblclick && document.removeEventListener('dblclick', toggle, false);
-		}
-	};
-}

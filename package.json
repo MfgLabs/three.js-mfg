@@ -1,0 +1,19 @@
+{
+  "name": "three.js-mfg",
+  "version": "0.0.0",
+  "description": "three.js-mfg ============",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "rm index.js && cat src/a.* >> index.js && cat src/b.* >> index.js && cat src/c.* >> index.js && cat src/d.* >> index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/MfgLabs/three.js-mfg.git"
+  },
+  "author": "",
+  "license": "BSD",
+  "bugs": {
+    "url": "https://github.com/MfgLabs/three.js-mfg/issues"
+  }
+}
