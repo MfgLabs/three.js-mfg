@@ -1,6 +1,6 @@
 {
   "name": "three.js-mfg",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "three.js-mfg ============",
   "main": "index.js",
   "scripts": {
